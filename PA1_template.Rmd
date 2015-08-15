@@ -1,25 +1,162 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+# Reproducible Research - Peer Assessment 1
+Graham Robertson
 
 
-## Loading and preprocessing the data
+## Introduction
+This is the completed assignment that makes use of data from a personal activity monitoring device. 
 
 
+## Loading and pre-processing the data
+
+After the data file has been unzipped and saved in your working area, load the "activity.csv"" file.
+```{r loading, echo = TRUE}
+act <- read.csv("activity.csv")
+```
+For later processing add an interval_number variable. This will be in the range 1:288 equating to the 5 min interval data collection each day.
+Sixty one days worth of consecutive data from October to November 2012 is available.
+```{r processing, echo = TRUE, warning = FALSE, message = FALSE}
+library(dplyr)
+act <- mutate(act, interval_number = rep(c(1:288), times = 61))
+```
 
 ## What is mean total number of steps taken per day?
 
+To calulate the total number of steps taken per day
+```{r total_steps_per_day, echo = TRUE}
+steps <- act %>%
+    group_by(date) %>%
+    summarise(total = sum(steps)) %>%
+    print
+```
+Now show as a histogram of the total number of steps taken each day.
+```{r total_steps_per_day_histogram, echo = TRUE}
+hist(steps$total, col = "green", main = "Histogram - Total Number of Steps per Day", xlab = "Number of Steps per day", breaks = 20)
+```
 
+Calculate and report the mean and median of the total number of steps taken per day.
+```{r mean_median, echo = TRUE}
+meanSteps <- mean(steps$total, na.rm = TRUE)
+meanSteps
+medianSteps <- median(steps$total, na.rm = TRUE)
+medianSteps
+```
+So we see that the mean value is 10766.19 and the median value is 10765 for the total number of steps per day. 
 
 ## What is the average daily activity pattern?
+To illustrate the average daily activity pattern create a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis).
+```{r daily_pattern, echo = TRUE}
+timePlot <- act %>%
+        group_by(interval_number) %>%
+        summarise(average = mean(steps, na.rm = TRUE)) %>%
+        print
+with(timePlot, plot(interval_number, average, type = "l", col = "blue", main = "Average steps per 5 min interval"))
+```
 
 
+The 5-minute interval, which on average across all the days in the dataset, contains the maximum number of steps can be determined by:
+```{r max_step_int, echo = TRUE}
+filter(timePlot, average == max(average))
+```
+So we see that interval 104 (08:35 to 08:40) contains the maximum number of steps across all the days in the dataset with an average value of 206 steps.
 
 ## Imputing missing values
+Calulate the total number of missing values in the dataset and express as a fraction of the total.
+```{r missing, echo = TRUE}
+sum(!complete.cases(act))
+sum(!complete.cases(act))/nrow(act)
+```
+We see that there are 2304 instances of missing values i.e. approximately 13% of the dataset has rows with NAs
 
+### Filling strategy
+The strategy employed to fill in the missing data is to create a new dataset by:  
+1. Calculating the mean number of steps per day and record in the dataset as a new variable, 'day_mean'   
+2. Replace any instances of NAN values this new variable by the overall mean of this new varibale   
+3. Replace any instances of NA values in the 'steps' variable by the 'day_mean' value divided by the number of intervals per day (288)  
+```{r fill, echo = TRUE}
+act2 <- act %>%
+        group_by(date) %>%
+        mutate(day_mean = mean(steps, na.rm = TRUE)) %>%
+        print
+act2$day_mean <- replace(act2$day_mean, is.nan(act2$day_mean), mean(act2$day_mean, na.rm = TRUE))
+act2 <- transform(act2, steps = ifelse(is.na(steps), act2$day_mean/288, steps))
+head(act2)
+```
+To calulate the total number of steps taken per day with this new dataset:
+```{r total_steps2_per_day, echo = TRUE}
+steps2 <- act2 %>%
+      group_by(date) %>%
+      summarise(total_no_na = sum(steps)) %>%
+      print 
+```
+Now to show as a histogram of the total number of steps taken each day with this new dataset:
+```{r total_steps2_per_day_histogram, echo = TRUE}
+hist(steps2$total, col = "green", main = "Histogram - Number of Steps per Day (no NAs)", xlab = "Number of Steps per day (no NAs)", breaks = 20)
+```
 
+Note: the two histograms are identical except that the first bin now contains 10 instances (previously 2) corresponding to the 8 days of data that had NA values (replaced by 37.836 in new dataset).
+
+Calculate and report the mean and median of the total number of steps taken per day with this new dataset:
+```{r mean_median2, echo = TRUE}
+meanSteps2 <- mean(steps2$total_no_na, na.rm = TRUE)
+meanSteps2
+medianSteps2 <- median(steps2$total_no_na, na.rm = TRUE)
+medianSteps2
+```
+Comparing the mean and median values of each dataset:
+```{r mean_compare, echo = TRUE}
+meanSteps - meanSteps2
+medianSteps - medianSteps2
+```
+We see that as a consequence of imputing the missing data by this strategy, the mean and median values have both decreased and diverged from each other.  
+
+To assess the impact of imputing the missing data on the total daily number of steps we can compare the data in the 'steps' and 'steps2' tables above. From the small sample visible we see the total number of steps each day are unchanged except for the replacement of NAs with the mean number of steps per day value. We can confirm there are no unexpected changes by:  
+1. Checking that the number of NAs correspond to expected   
+2. Checking (non NA) values are identical by squaring the difference between the entries in each table, summing them and checking the total is zero 
+```{r total_check, echo = TRUE}
+stepsCombined <- steps %>%
+            mutate(total_with_na = steps2$total_no_na) %>%
+            mutate(diff = total - total_with_na) %>%
+            mutate(diffSqr = diff^2) %>%
+            print
+```
+From previous calculations we know there are 2304 instances of missing values which equates to 8 days (2304/288) of data. Are there eight entries in the stepsCombined with NAs?
+```{r na_check, echo = TRUE}
+sum(is.na(stepsCombined$diff))
+sum(is.na(stepsCombined$diffSqr))
+```
+Yes, from above we see there are eight entries, the number of NAs expected.  
+Is the sum of the squares of the differences equal to zero?
+```{r sqr_check, echo = TRUE}
+summarise(stepsCombined, sum(diffSqr, na.rm = TRUE))
+```
+Yes, the sum of the squares of the differences does equal zero so, we can conclude there are no unexpected differences between the totals when imputing the missing data.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+To investigate this question will first create a new factor variable in the dataset with two levels - "weekday" and "weekend" indicating whether a given date is a weekday or weekend day.
+```{r weekend, warning = FALSE, echo = TRUE}
+library(lubridate)
+act2 <- mutate(act2, weekend = grepl("^[Ss]", wday(act2$date, label=TRUE)))
+act2 <- mutate(act2, day_type = ifelse(weekend, "weekend", "weekday"))
+act2$day_type <- as.factor(act2$day_type)
+head(act2)
+```
+Will now create a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+```{r panel_plot, fig.height = 10, echo = TRUE}
+timePlot2 <- act2 %>%
+        group_by(interval_number, day_type) %>%
+        summarise(average = mean(steps, na.rm = TRUE)) %>%
+        print
+par(mfrow = c(2,1))
+with(filter(timePlot2, day_type == "weekend"), plot(interval_number, average, type = "l", col = "green", main = "Weekend", ylab = "Avg. no. of Steps", xlab = "Interval"))
+with(filter(timePlot2, day_type == "weekday"), plot(interval_number, average, type = "l", col = "blue", main = "Weekday", ylab = "Avg. no. of Steps", xlab = "Interval"))
+```
+
+
+
+
+From the plots we see that there does not appear to be any major differences in activity patterns between weekdays and weekends. The peaks and troughs align fairly well with less steps taken at the weekend. A few points of note (possible areas to explore further):  
+1. As expected there is little activity in the quiet hours during the week and at the weekend.  
+2. The early morning peak around interval 75 (06:00 am) in weekdays is not evident at weekends. This is     probably explained by a weekend lie-in and no need to get up early for work.  
+3. The maximum peak occurs around interval 110 (09:00 am) during the week and at the weekend with less steps at the weekend.   
+4. There is more activity in the afternoon between intervals 145 and 200 (around 12:00-17:00 pm) at the weekend possibly corresponding to leisure pursuits rather than being sat in the office during the (work) weekdays.
+
